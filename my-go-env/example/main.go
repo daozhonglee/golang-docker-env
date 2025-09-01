@@ -22,8 +22,8 @@ func main() {
 
 	fmt.Println("Go 开发服务器启动...")
 	fmt.Println("访问地址:")
-	fmt.Println("  - http://localhost:8080/")
-	fmt.Println("  - http://localhost:8080/health")
+	fmt.Println("  - http://localhost:8087/")
+	fmt.Println("  - http://localhost:8087/health")
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8087", nil))
 }

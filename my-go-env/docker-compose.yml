@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # Go 开发环境
   go-dev:
     build:
       context: .
@@ -8,7 +7,7 @@ services:
     container_name: go-dev-env
     hostname: go-dev
     ports:
-      - "2222:22"  # SSH 端口映射
+      - "2222:22"    # SSH 端口映射
       - "8087:8087"  # 应用端口
       - "8081:8081"  # 调试端口
       - "9000:9000"  # 其他服务端口
@@ -29,10 +28,215 @@ services:
     restart: unless-stopped
     networks:
       - go-dev-network
+    depends_on:
+      - redis
+      - mysql
+      - elasticsearch
+
+  # Redis 缓存服务
+  redis:
+    image: redis:7.2-alpine
+    container_name: go-dev-redis
+    hostname: redis
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis-data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: go-dev-mysql
+    hostname: mysql
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init/mysql:/docker-entrypoint-initdb.d:ro
+    environment:
+      - MYSQL_ROOT_PASSWORD=root123
+      - MYSQL_DATABASE=go_dev
+      - MYSQL_USER=developer
+      - MYSQL_PASSWORD=developer
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+
+  # Nginx 反向代理服务
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: go-dev-nginx
+    hostname: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx:/etc/nginx/conf.d:ro
+      - ./static:/usr/share/nginx/html:ro
+      - nginx-logs:/var/log/nginx
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+    depends_on:
+      - go-dev
+
+  # Zookeeper (Kafka 依赖)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: go-dev-zookeeper
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+
+  # Kafka 消息队列服务
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: go-dev-kafka
+    hostname: kafka
+    ports:
+      - "19092:9092"
+      - "19997:9997"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9997
+      KAFKA_JMX_HOSTNAME: localhost
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+    depends_on:
+      - zookeeper
+
+  # Elasticsearch 搜索引擎服务
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: go-dev-elasticsearch
+    hostname: elasticsearch
+    ports:
+      - "19200:9200"
+      - "19300:9300"
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=go-dev-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+
+  # Kibana 可视化服务
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: go-dev-kibana
+    hostname: kibana
+    ports:
+      - "15601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+    volumes:
+      - kibana-data:/usr/share/kibana/data
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+    depends_on:
+      - elasticsearch
+
+  # Grafana 监控可视化服务
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: go-dev-grafana
+    hostname: grafana
+    ports:
+      - "13000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    networks:
+      - go-dev-network
+    depends_on:
+      - prometheus
+
+  # Prometheus 监控数据收集服务
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: go-dev-prometheus
+    hostname: prometheus
+    ports:
+      - "19090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - go-dev-network
 
 volumes:
+  # Go 开发环境数据卷
   go-mod-cache:
   go-build-cache:
+  
+  # 中间件数据卷
+  redis-data:
+  mysql-data:
+  nginx-logs:
+  
+  # 大数据和消息队列数据卷
+  kafka-data:
+  zookeeper-data:
+  zookeeper-logs:
+  
+  # ELK 数据卷
+  elasticsearch-data:
+  kibana-data:
+  
+  # 监控数据卷
+  grafana-data:
+  prometheus-data:
 
 networks:
   go-dev-network:

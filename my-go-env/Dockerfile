@@ -1,12 +1,12 @@
-# 基于 Ubuntu 22.04 构建 Go 开发环境
+# 基于 Ubuntu 22.04 构建轻量 Go 开发环境（无 C 编译器）
 FROM ubuntu:22.04
 
 # 设置环境变量避免交互式安装时的提示
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 更新包管理器并安装基础工具，设置时区
-RUN apt-get update && apt-get install -y \
+# 更新包管理器并安装基础工具（使用 --no-install-recommends 避免安装构建工具）
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     git \
@@ -15,8 +15,6 @@ RUN apt-get update && apt-get install -y \
     htop \
     tree \
     unzip \
-    build-essential \
-    libc6-dev \
     openssh-server \
     sudo \
     tzdata \
@@ -27,8 +25,7 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     fzf \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
-    && echo $TZ > /etc/timezone
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装 Go 1.25
 ENV GO_VERSION=1.25.0
@@ -37,20 +34,11 @@ ENV GOPATH=/go
 ENV PATH=$GOROOT/bin:$GOPATH/bin:$PATH
 
 # 安装 Go，创建工作目录，验证安装
-# 自动检测架构并下载对应的 Go 版本
-RUN ARCH=$(case $(uname -m) in x86_64) echo amd64;; aarch64) echo arm64;; *) echo amd64;; esac) \
-    && wget https://dl.google.com/go/go${GO_VERSION}.linux-${ARCH}.tar.gz \
-    && tar -C /usr/local -xzf go${GO_VERSION}.linux-${ARCH}.tar.gz \
-    && rm go${GO_VERSION}.linux-${ARCH}.tar.gz \
+RUN wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
+    && rm go${GO_VERSION}.linux-amd64.tar.gz \
     && mkdir -p $GOPATH/src $GOPATH/bin $GOPATH/pkg \
     && go version
-
-# 先跳过开发工具安装，留待后续添加
-# TODO: 稍后添加开发工具安装
-# RUN go install golang.org/x/tools/gopls@latest \
-#     && go install github.com/go-delve/delve/cmd/dlv@latest \
-#     && go install golang.org/x/tools/cmd/goimports@latest \
-#     && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # 创建用户，配置 SSH，设置密码
 RUN useradd -m -s /bin/zsh -G sudo developer \
@@ -63,10 +51,10 @@ RUN useradd -m -s /bin/zsh -G sudo developer \
     && echo 'AuthorizedKeysFile .ssh/authorized_keys' >> /etc/ssh/sshd_config \
     && echo 'root:root123' | chpasswd
 
-# 为 developer 用户设置 SSH 目录和 oh-my-zsh
+# 为 developer 用户设置 SSH 目录和环境
 USER developer
 
-# 配置 developer 用户环境：SSH 目录、oh-my-zsh、别名、环境变量、fzf
+# 配置 developer 用户环境：SSH目录 + oh-my-zsh + 环境变量 + 别名 + fzf
 RUN mkdir -p /home/developer/.ssh \
     && chmod 700 /home/developer/.ssh \
     && touch /home/developer/.ssh/authorized_keys \
@@ -92,11 +80,11 @@ RUN mkdir -p /workspace \
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-# 暴露 SSH 端口
-EXPOSE 22
-
 # 设置工作目录
 WORKDIR /workspace
 
-# 启动脚本
+# 暴露端口
+EXPOSE 22
+
+# 启动命令
 CMD ["/usr/local/bin/start.sh"]
