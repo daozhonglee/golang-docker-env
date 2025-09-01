@@ -1,0 +1,31 @@
+# Git 相关
+.git
+.gitignore
+
+# Docker 相关
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# 文档
+README.md
+*.md
+
+# 编辑器和IDE
+.vscode/
+.history/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 临时文件
+tmp/
+temp/
